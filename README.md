@@ -2,7 +2,7 @@
 
 Standalone CLI tool to sync [Plaud.ai](https://plaud.ai) recordings to local markdown files. Replatformed from [plaud-sync-for-obsidian](https://github.com/leonardsellem/plaud-sync-for-obsidian) by Leonard Sellem.
 
-No Obsidian dependency required -- works as a plain Node.js CLI, ideal for cron jobs and automation.
+No Obsidian dependency required -- works as a plain Python CLI, ideal for cron jobs and automation.
 
 ## Features
 
@@ -12,21 +12,20 @@ No Obsidian dependency required -- works as a plain Node.js CLI, ideal for cron 
 - Retry with exponential backoff for transient API errors
 - Filename collision resolution
 - Cron-friendly: proper exit codes, no prompts, quiet by default
+- Zero external dependencies (stdlib only)
+
+## Requirements
+
+- Python 3.10+
 
 ## Installation
 
 ```bash
 git clone https://github.com/wizz-cmd/plaud-sync-cli.git
 cd plaud-sync-cli
-npm install
-npm run build
 ```
 
-Or link globally:
-
-```bash
-npm link
-```
+No `pip install` needed -- runs directly with Python.
 
 ## Setup
 
@@ -46,14 +45,8 @@ chmod 600 ~/.secrets/plaud.txt
 
 ```bash
 mkdir -p ~/.config/plaud-sync
-cat > ~/.config/plaud-sync/config.json << 'EOF'
-{
-  "apiDomain": "https://api.plaud.ai",
-  "syncFolder": "Plaud",
-  "updateExisting": true,
-  "filenamePattern": "plaud-{date}-{title}"
-}
-EOF
+cp config.example.json ~/.config/plaud-sync/config.json
+# Edit as needed
 ```
 
 ## Usage
@@ -61,19 +54,19 @@ EOF
 ### Validate your token
 
 ```bash
-plaud-sync validate
+python3 -m plaud_sync.cli validate
 ```
 
 ### Sync recordings
 
 ```bash
-plaud-sync sync
+python3 -m plaud_sync.cli sync
 ```
 
 ### With options
 
 ```bash
-plaud-sync sync \
+python3 -m plaud_sync.cli sync \
   --vault /path/to/notes \
   --folder Ingest/meetings/plaud \
   --token-file ~/.secrets/plaud.txt \
@@ -94,13 +87,26 @@ plaud-sync sync \
 
 ```bash
 # Sync every hour
-0 * * * * cd /path/to/notes && /usr/local/bin/plaud-sync sync --vault /path/to/notes 2>> /var/log/plaud-sync.log
+0 * * * * cd /path/to/notes && python3 -m plaud_sync.cli sync --vault /path/to/notes 2>> /var/log/plaud-sync.log
 ```
 
 Exit codes:
 - `0` = success
 - `1` = sync completed with failures, or runtime error
-- `2` = invalid arguments
+- `2` = authentication failure
+
+## Config
+
+Copy `config.example.json` to `~/.config/plaud-sync/config.json`:
+
+```json
+{
+  "apiDomain": "https://api.plaud.ai",
+  "syncFolder": "Plaud",
+  "updateExisting": true,
+  "filenamePattern": "plaud-{date}-{title}"
+}
+```
 
 ## Checkpoint
 
@@ -137,9 +143,8 @@ Bob: Morning! Let's get started...
 ## Development
 
 ```bash
-npm run build     # Compile TypeScript
-npm test          # Run tests
-npm run lint      # Type-check without emit
+python3 -m pytest test/ -v   # Run tests
+python3 -m plaud_sync.cli --help   # Show CLI help
 ```
 
 ## License

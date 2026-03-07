@@ -1,5 +1,10 @@
-node_modules/
-dist/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
 _upstream/
-*.js.map
 .plaud-sync-state.json
+*.egg-info/
+dist/
+build/
+.env
