@@ -1,0 +1,5 @@
+node_modules/
+dist/
+_upstream/
+*.js.map
+.plaud-sync-state.json
