@@ -8,3 +8,6 @@ _upstream/
 dist/
 build/
 .env
+_upstream/
+__pycache__/
+.pytest_cache/
