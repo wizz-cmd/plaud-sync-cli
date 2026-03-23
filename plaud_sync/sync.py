@@ -14,6 +14,7 @@ from plaud_sync.hydrator import hydrate
 from plaud_sync.normalizer import normalize, NormalizedDetail
 from plaud_sync.renderer import render_markdown
 from plaud_sync.config import Config, load_state, save_state, STATE_FILENAME
+from plaud_sync.period import filter_by_period
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,7 @@ def run_sync(
     vault_path: Path,
     config: Config,
     verbose: bool = False,
+    period: tuple | None = None,
 ) -> SyncSummary:
     """Run incremental sync of Plaud recordings to local markdown files.
 
@@ -142,6 +144,10 @@ def run_sync(
     # List all files
     all_files = api.list_files()
     summary.listed = len(all_files)
+
+    # Filter by period if specified
+    if period:
+        all_files = filter_by_period(all_files, period[0], period[1])
 
     # Filter by checkpoint and trash
     selected = [f for f in all_files if _should_sync_file(f, checkpoint)]

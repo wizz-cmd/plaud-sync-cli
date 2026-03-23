@@ -10,6 +10,7 @@ from pathlib import Path
 from plaud_sync import __version__
 from plaud_sync.api import PlaudApiClient
 from plaud_sync.config import Config, load_config, load_token
+from plaud_sync.period import PeriodParseError, filter_by_period, parse_period
 from plaud_sync.retry import PlaudApiError
 from plaud_sync.sync import run_sync
 
@@ -33,7 +34,20 @@ def _build_parser() -> argparse.ArgumentParser:
                              help="Path to token file (default: ~/.secrets/plaud.txt)")
     sync_parser.add_argument("--config", type=str, default=None,
                              help="Path to config file (default: ~/.config/plaud-sync/config.json)")
+    sync_parser.add_argument("-p", "--period", type=str, default=None,
+                             help="Filter by period (e.g. 2026-03, thisweek, last7days)")
     sync_parser.add_argument("--verbose", action="store_true",
+                             help="Enable verbose debug output")
+
+    # list command
+    list_parser = subparsers.add_parser("list", help="List recordings (without syncing)")
+    list_parser.add_argument("--token-file", type=str, default=None,
+                             help="Path to token file (default: ~/.secrets/plaud.txt)")
+    list_parser.add_argument("--config", type=str, default=None,
+                             help="Path to config file (default: ~/.config/plaud-sync/config.json)")
+    list_parser.add_argument("-p", "--period", type=str, default=None,
+                             help="Filter by period (e.g. 2026-03, thisweek, last7days)")
+    list_parser.add_argument("--verbose", action="store_true",
                              help="Enable verbose debug output")
 
     # validate command
@@ -71,8 +85,13 @@ def _handle_sync(args: argparse.Namespace) -> int:
         print(f"Error: vault path does not exist: {vault_path}", file=sys.stderr)
         return 1
 
+    period_range = _resolve_period(args)
+    if period_range is None and hasattr(args, "_period_error"):
+        return 1
+
     try:
-        summary = run_sync(api, vault_path, config, verbose=args.verbose)
+        summary = run_sync(api, vault_path, config, verbose=args.verbose,
+                           period=period_range)
     except PlaudApiError as e:
         return _handle_api_error(e)
 
@@ -102,6 +121,63 @@ def _handle_validate(args: argparse.Namespace) -> int:
         return _handle_api_error(e)
 
 
+def _resolve_period(args: argparse.Namespace) -> tuple | None:
+    """Parse --period flag if present. Returns (start, end) or None."""
+    if not getattr(args, "period", None):
+        return None
+    try:
+        return parse_period(args.period)
+    except PeriodParseError as e:
+        print(f"Invalid period: {e}", file=sys.stderr)
+        args._period_error = True
+        return None
+
+
+def _handle_list(args: argparse.Namespace) -> int:
+    _setup_logging(args.verbose)
+
+    config = load_config(args.config)
+    token = load_token(args.token_file)
+    api = PlaudApiClient(token=token, api_domain=config.api_domain)
+
+    period_range = _resolve_period(args)
+    if period_range is None and hasattr(args, "_period_error"):
+        return 1
+
+    try:
+        files = api.list_files()
+    except PlaudApiError as e:
+        return _handle_api_error(e)
+
+    # Filter by period if specified
+    if period_range:
+        files = filter_by_period(files, period_range[0], period_range[1])
+
+    # Filter out trash
+    files = [f for f in files if not f.get("is_trash")]
+
+    # Sort by start_time descending
+    files.sort(key=lambda f: f.get("start_time", 0), reverse=True)
+
+    if not files:
+        print("No recordings found.")
+        return 0
+
+    print(f"Found {len(files)} recording(s):\n")
+    for f in files:
+        file_id = f.get("file_id") or f.get("id", "?")
+        title = f.get("file_name") or f.get("title") or "Untitled"
+        ts = f.get("start_time")
+        if isinstance(ts, (int, float)) and ts > 0:
+            from datetime import datetime as dt
+            date_str = dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d %H:%M")
+        else:
+            date_str = "unknown"
+        print(f"  {date_str}  {title}  [{file_id}]")
+
+    return 0
+
+
 def _handle_api_error(e: PlaudApiError) -> int:
     if e.category == "auth":
         print(f"Authentication failed: {e}. Check your token.", file=sys.stderr)
@@ -127,6 +203,8 @@ def main() -> None:
 
     if args.command == "sync":
         sys.exit(_handle_sync(args))
+    elif args.command == "list":
+        sys.exit(_handle_list(args))
     elif args.command == "validate":
         sys.exit(_handle_validate(args))
     else:
