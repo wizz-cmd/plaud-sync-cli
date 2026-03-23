@@ -1,10 +1,10 @@
 # PROJECT.md — Plaud Sync CLI
 
-**Status:** aktiv
+**Status:** abgeschlossen ✅
 **Repo:** https://github.com/wizz-cmd/plaud-sync-cli
 **Plattform:** dev (`~/projects/plaud-sync-cli/`)
 **Sprache:** Python 3.10+ (stdlib only → ab v2: textual, optional LLM)
-**Letzte Aktivität:** 2026-03-23
+**Letzte Aktivität:** 2026-03-23 (closed)
 
 ---
 
@@ -25,7 +25,7 @@ Standalone CLI zum Sync von Plaud.ai Recordings nach lokalen Markdown-Dateien. F
 - Token eingerichtet, 130 Recordings initial gesynct
 - Cron alle 3h auf anna → `Ingest/meetings/plaud/`
 
-### v2 — IN ARBEIT 🔧
+### v2 — DONE ✅
 
 #### Feature 1: `--period / -p` (Zeitraum-Filter)
 hledger-style Syntax für alle Subcommands:
@@ -93,4 +93,4 @@ hledger-style Syntax für alle Subcommands:
 ---
 
 *Erstellt: 2026-03-07*
-*Aktualisiert: 2026-03-23 von Anna*
+*Aktualisiert: 2026-03-23 von Anna — PROJEKT ABGESCHLOSSEN*
