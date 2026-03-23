@@ -86,6 +86,23 @@ def _build_parser() -> argparse.ArgumentParser:
     show_parser = templates_sub.add_parser("show", help="Show a template")
     show_parser.add_argument("name", type=str, help="Template name")
 
+    # journal command
+    journal_parser = subparsers.add_parser("journal", help="View meeting journal")
+    journal_parser.add_argument("--vault", type=str, default=".",
+                                help="Base directory for output (default: current directory)")
+    journal_parser.add_argument("--folder", type=str, default=None,
+                                help="Subfolder for notes (overrides config)")
+    journal_parser.add_argument("--config", type=str, default=None,
+                                help="Path to config file")
+    journal_parser.add_argument("-p", "--period", type=str, default=None,
+                                help="Filter by period (e.g. 2026-03, thisweek, last7days)")
+    journal_parser.add_argument("--format", type=str, default="pretty", choices=["pretty", "json"],
+                                help="Output format (default: pretty)")
+    journal_parser.add_argument("--stats", action="store_true",
+                                help="Show speaker stats and meeting counts by month")
+    journal_parser.add_argument("--verbose", action="store_true",
+                                help="Enable verbose debug output")
+
     # validate command
     validate_parser = subparsers.add_parser("validate", help="Validate API token")
     validate_parser.add_argument("--token-file", type=str, default=None,
@@ -317,6 +334,104 @@ def _handle_templates(args: argparse.Namespace) -> int:
         return 1
 
 
+def _handle_journal(args: argparse.Namespace) -> int:
+    _setup_logging(getattr(args, "verbose", False))
+
+    import json
+    from collections import Counter
+    from plaud_sync.journal import read_journal, JOURNAL_FILENAME
+
+    config = load_config(args.config)
+    if args.folder:
+        config.sync_folder = args.folder
+
+    vault_path = Path(args.vault).resolve()
+    journal_path = vault_path / config.sync_folder / JOURNAL_FILENAME
+
+    entries = read_journal(journal_path)
+    if not entries:
+        print("No journal entries found.")
+        return 0
+
+    # Filter by period
+    period_range = _resolve_period(args)
+    if period_range is None and hasattr(args, "_period_error"):
+        return 1
+
+    if period_range:
+        from datetime import datetime
+        start, end = period_range
+        filtered = []
+        for e in entries:
+            date_str = e.get("date", "")
+            try:
+                d = datetime.strptime(date_str, "%Y-%m-%d")
+                if start <= d < end:
+                    filtered.append(e)
+            except ValueError:
+                continue
+        entries = filtered
+
+    if args.stats:
+        return _print_journal_stats(entries)
+
+    if args.format == "json":
+        for e in entries:
+            print(json.dumps(e, ensure_ascii=False))
+        return 0
+
+    # Pretty print last 20
+    for e in entries[-20:]:
+        date = e.get("date", "?")
+        title = e.get("title", "Untitled")
+        dur = e.get("duration_min", 0)
+        speakers = ", ".join(e.get("speakers", []))
+        words = e.get("word_count", 0)
+        print(f"  {date}  {title} ({dur} min, {words} words)")
+        if speakers:
+            print(f"           Speakers: {speakers}")
+
+    print(f"\n{len(entries)} entries total.")
+    return 0
+
+
+def _print_journal_stats(entries: list[dict]) -> int:
+    """Print speaker stats and meeting counts by month."""
+    from collections import Counter
+
+    if not entries:
+        print("No entries.")
+        return 0
+
+    # Meetings by month
+    month_counts: Counter[str] = Counter()
+    speaker_counts: Counter[str] = Counter()
+    total_words = 0
+    total_duration = 0
+
+    for e in entries:
+        date = e.get("date", "")
+        if len(date) >= 7:
+            month_counts[date[:7]] += 1
+        for s in e.get("speakers", []):
+            speaker_counts[s] += 1
+        total_words += e.get("word_count", 0)
+        total_duration += e.get("duration_min", 0)
+
+    print(f"Total: {len(entries)} meetings, {total_duration} min, {total_words} words\n")
+
+    print("Meetings by month:")
+    for month, count in sorted(month_counts.items()):
+        print(f"  {month}: {count}")
+
+    if speaker_counts:
+        print("\nSpeaker frequency:")
+        for speaker, count in speaker_counts.most_common():
+            print(f"  {speaker}: {count}")
+
+    return 0
+
+
 def _handle_api_error(e: PlaudApiError) -> int:
     if e.category == "auth":
         print(f"Authentication failed: {e}. Check your token.", file=sys.stderr)
@@ -350,6 +465,8 @@ def main() -> None:
         sys.exit(_handle_analyze(args))
     elif args.command == "templates":
         sys.exit(_handle_templates(args))
+    elif args.command == "journal":
+        sys.exit(_handle_journal(args))
     elif args.command == "validate":
         sys.exit(_handle_validate(args))
     else:
