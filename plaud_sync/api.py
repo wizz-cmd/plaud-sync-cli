@@ -80,6 +80,7 @@ class PlaudApiClient:
         req = Request(url)
         req.add_header("Authorization", f"Bearer {self.token}")
         req.add_header("Accept", "application/json")
+        req.add_header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
 
         try:
             with urlopen(req, timeout=30) as resp:
