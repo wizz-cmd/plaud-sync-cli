@@ -27,6 +27,8 @@ class NormalizedDetail:
     highlights: list[str]
     transcript: str
     raw: dict[str, Any]
+    speakers: list[str] = field(default_factory=list)
+    segments: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _strip_markup(text: str) -> str:
@@ -265,6 +267,87 @@ def _extract_transcript(detail: dict) -> str:
     return ""
 
 
+def _extract_segments(detail: dict) -> list[dict[str, Any]]:
+    """Extract raw transcript segments with timestamps.
+
+    Returns list of dicts with keys: content, speaker, start_time, end_time.
+    """
+    # trans_result may be a list of segments directly (from hydrator)
+    trans = detail.get("trans_result")
+    if isinstance(trans, list):
+        segments = []
+        for seg in trans:
+            if isinstance(seg, dict) and seg.get("content", "").strip():
+                segments.append({
+                    "content": seg.get("content", "").strip(),
+                    "speaker": seg.get("speaker", "").strip(),
+                    "original_speaker": seg.get("original_speaker", "").strip(),
+                    "start_time": seg.get("start_time", 0),
+                    "end_time": seg.get("end_time", 0),
+                })
+        return segments
+
+    # trans_result as dict with paragraphs/sentences
+    if isinstance(trans, dict):
+        for key in ("paragraphs", "sentences"):
+            items = trans.get(key)
+            if isinstance(items, list) and items:
+                segments = []
+                for item in items:
+                    if isinstance(item, dict) and item.get("text", "").strip():
+                        segments.append({
+                            "content": item.get("text", "").strip(),
+                            "speaker": item.get("speaker", "").strip(),
+                            "original_speaker": item.get("original_speaker", "").strip(),
+                            "start_time": item.get("start_time", 0),
+                            "end_time": item.get("end_time", 0),
+                        })
+                if segments:
+                    return segments
+
+    # Top-level transcript array
+    transcript = detail.get("transcript")
+    if isinstance(transcript, list) and transcript:
+        segments = []
+        for item in transcript:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content", "")
+                if text.strip():
+                    segments.append({
+                        "content": text.strip(),
+                        "speaker": (item.get("speaker") or "").strip(),
+                        "original_speaker": (item.get("original_speaker") or "").strip(),
+                        "start_time": item.get("start_time", 0),
+                        "end_time": item.get("end_time", 0),
+                    })
+        if segments:
+            return segments
+
+    return []
+
+
+def _extract_speakers(segments: list[dict[str, Any]]) -> list[str]:
+    """Extract deduplicated speaker list from segments.
+
+    Named speakers first, then 'Speaker N' style at the end.
+    """
+    seen: set[str] = set()
+    named: list[str] = []
+    generic: list[str] = []
+
+    for seg in segments:
+        speaker = seg.get("speaker", "").strip()
+        if not speaker or speaker in seen:
+            continue
+        seen.add(speaker)
+        if re.match(r"^Speaker\s+\d+$", speaker, re.IGNORECASE):
+            generic.append(speaker)
+        else:
+            named.append(speaker)
+
+    return named + generic
+
+
 def normalize(detail: dict) -> NormalizedDetail:
     """Normalize a raw Plaud API file detail into a clean structure.
 
@@ -274,6 +357,8 @@ def normalize(detail: dict) -> NormalizedDetail:
     Returns:
         NormalizedDetail with extracted and cleaned fields.
     """
+    segments = _extract_segments(detail)
+    speakers = _extract_speakers(segments)
     return NormalizedDetail(
         id=_extract_id(detail),
         file_id=_extract_file_id(detail),
@@ -284,4 +369,6 @@ def normalize(detail: dict) -> NormalizedDetail:
         highlights=_extract_highlights(detail),
         transcript=_extract_transcript(detail),
         raw=detail,
+        speakers=speakers,
+        segments=segments,
     )

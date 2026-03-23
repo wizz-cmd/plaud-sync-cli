@@ -139,7 +139,7 @@ class TestRunSync:
         assert len(md_files) == 1
         content = md_files[0].read_text()
         assert "file_id: f1" in content
-        assert "Summary" in content
+        assert "Zusammenfassung" in content
 
     def test_incremental_sync_skips_old(self, tmp_path):
         # Set up state with checkpoint

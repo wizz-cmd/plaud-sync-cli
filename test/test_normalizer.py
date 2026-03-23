@@ -95,3 +95,39 @@ class TestNormalize:
         assert result.summary == ""
         assert result.highlights == []
         assert result.transcript == ""
+        assert result.speakers == []
+        assert result.segments == []
+
+    def test_segments_from_trans_result_list(self):
+        detail = {
+            "trans_result": [
+                {"content": "Hello", "speaker": "Alice", "start_time": 0, "end_time": 5000},
+                {"content": "Hi", "speaker": "Bob", "start_time": 5000, "end_time": 10000},
+            ]
+        }
+        result = normalize(detail)
+        assert len(result.segments) == 2
+        assert result.segments[0]["speaker"] == "Alice"
+        assert result.segments[1]["content"] == "Hi"
+
+    def test_speakers_extracted_from_segments(self):
+        detail = {
+            "trans_result": [
+                {"content": "Hello", "speaker": "Alice", "start_time": 0, "end_time": 5000},
+                {"content": "Hi", "speaker": "Bob", "start_time": 5000, "end_time": 10000},
+                {"content": "Yes", "speaker": "Alice", "start_time": 10000, "end_time": 15000},
+            ]
+        }
+        result = normalize(detail)
+        assert result.speakers == ["Alice", "Bob"]
+
+    def test_speakers_generic_sorted_last(self):
+        detail = {
+            "trans_result": [
+                {"content": "A", "speaker": "Speaker 1", "start_time": 0, "end_time": 1},
+                {"content": "B", "speaker": "Alice", "start_time": 1, "end_time": 2},
+                {"content": "C", "speaker": "Speaker 2", "start_time": 2, "end_time": 3},
+            ]
+        }
+        result = normalize(detail)
+        assert result.speakers == ["Alice", "Speaker 1", "Speaker 2"]
