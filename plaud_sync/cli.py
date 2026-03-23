@@ -65,6 +65,27 @@ def _build_parser() -> argparse.ArgumentParser:
     tui_parser.add_argument("--verbose", action="store_true",
                             help="Enable verbose debug output")
 
+    # analyze command
+    analyze_parser = subparsers.add_parser("analyze", help="Analyze a transcript with LLM")
+    analyze_parser.add_argument("file", type=str,
+                                help="Path to markdown file or recording ID")
+    analyze_parser.add_argument("--template", "-t", type=str, default=None,
+                                help="Template name (default: 'default')")
+    analyze_parser.add_argument("--prompt", type=str, default=None,
+                                help="Additional prompt / ad-hoc instructions")
+    analyze_parser.add_argument("--config", type=str, default=None,
+                                help="Path to config file")
+    analyze_parser.add_argument("--verbose", action="store_true",
+                                help="Enable verbose debug output")
+
+    # templates command
+    templates_parser = subparsers.add_parser("templates", help="Manage analysis templates")
+    templates_sub = templates_parser.add_subparsers(dest="templates_command",
+                                                     help="Template commands")
+    templates_sub.add_parser("list", help="List available templates")
+    show_parser = templates_sub.add_parser("show", help="Show a template")
+    show_parser.add_argument("name", type=str, help="Template name")
+
     # validate command
     validate_parser = subparsers.add_parser("validate", help="Validate API token")
     validate_parser.add_argument("--token-file", type=str, default=None,
@@ -229,6 +250,73 @@ def _handle_tui(args: argparse.Namespace) -> int:
         return _handle_api_error(e)
 
 
+def _handle_analyze(args: argparse.Namespace) -> int:
+    _setup_logging(getattr(args, "verbose", False))
+
+    from plaud_sync.analyze import AnalyzeError, NoLlmConfigError, run_analysis
+
+    # Read transcript from file or treat as recording ID
+    file_arg = args.file
+    transcript = ""
+
+    path = Path(file_arg)
+    if path.is_file():
+        content = path.read_text()
+        # Extract transcript section from markdown
+        if "## Transcript" in content:
+            transcript = content.split("## Transcript", 1)[1].strip()
+        else:
+            transcript = content
+    else:
+        print(f"File not found: {file_arg}", file=sys.stderr)
+        return 1
+
+    if not transcript.strip():
+        print("No transcript content found.", file=sys.stderr)
+        return 1
+
+    try:
+        result = run_analysis(
+            transcript=transcript,
+            template_name=args.template,
+            extra_prompt=args.prompt,
+            config_path=args.config,
+        )
+        print(result)
+        return 0
+    except NoLlmConfigError as e:
+        print(f"LLM not configured: {e}", file=sys.stderr)
+        return 1
+    except AnalyzeError as e:
+        print(f"Analysis failed: {e}", file=sys.stderr)
+        return 1
+
+
+def _handle_templates(args: argparse.Namespace) -> int:
+    from plaud_sync.analyze import AnalyzeError, list_templates, load_template
+
+    cmd = getattr(args, "templates_command", None)
+    if cmd == "list":
+        templates = list_templates()
+        if not templates:
+            print("No templates found.")
+            return 0
+        for t in templates:
+            print(f"  {t['name']:20s}  ({t['source']})")
+        return 0
+    elif cmd == "show":
+        try:
+            content = load_template(args.name)
+            print(content)
+            return 0
+        except AnalyzeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+    else:
+        print("Usage: plaud-sync templates {list|show <name>}", file=sys.stderr)
+        return 1
+
+
 def _handle_api_error(e: PlaudApiError) -> int:
     if e.category == "auth":
         print(f"Authentication failed: {e}. Check your token.", file=sys.stderr)
@@ -258,6 +346,10 @@ def main() -> None:
         sys.exit(_handle_list(args))
     elif args.command == "tui":
         sys.exit(_handle_tui(args))
+    elif args.command == "analyze":
+        sys.exit(_handle_analyze(args))
+    elif args.command == "templates":
+        sys.exit(_handle_templates(args))
     elif args.command == "validate":
         sys.exit(_handle_validate(args))
     else:
