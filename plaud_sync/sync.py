@@ -14,6 +14,7 @@ from plaud_sync.hydrator import hydrate
 from plaud_sync.normalizer import normalize, NormalizedDetail
 from plaud_sync.renderer import render_markdown
 from plaud_sync.config import Config, load_state, save_state, STATE_FILENAME
+from plaud_sync.journal import JOURNAL_FILENAME, append_or_update, build_journal_entry
 from plaud_sync.period import filter_by_period
 
 logger = logging.getLogger(__name__)
@@ -178,12 +179,16 @@ def run_sync(
             # Check for existing file with same file_id
             existing = _find_existing_file(sync_folder, normalized.file_id)
 
+            journal_path = sync_folder / JOURNAL_FILENAME
+
             if existing:
                 if config.update_existing:
                     existing.write_text(markdown)
                     summary.updated += 1
                     if verbose:
                         logger.info("Updated: %s", existing.name)
+                    entry = build_journal_entry(normalized, existing.name)
+                    append_or_update(journal_path, entry)
                 else:
                     summary.skipped += 1
                     if verbose:
@@ -196,6 +201,8 @@ def run_sync(
                 summary.created += 1
                 if verbose:
                     logger.info("Created: %s", filename)
+                entry = build_journal_entry(normalized, filename)
+                append_or_update(journal_path, entry)
 
             # Track max start_time
             start_time = file_summary.get("start_time")
