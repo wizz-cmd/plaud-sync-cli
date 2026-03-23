@@ -50,6 +50,21 @@ def _build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--verbose", action="store_true",
                              help="Enable verbose debug output")
 
+    # tui command
+    tui_parser = subparsers.add_parser("tui", help="Interactive recording browser")
+    tui_parser.add_argument("--vault", type=str, default=".",
+                            help="Base directory for output (default: current directory)")
+    tui_parser.add_argument("--folder", type=str, default=None,
+                            help="Subfolder for notes (overrides config)")
+    tui_parser.add_argument("--token-file", type=str, default=None,
+                            help="Path to token file (default: ~/.secrets/plaud.txt)")
+    tui_parser.add_argument("--config", type=str, default=None,
+                            help="Path to config file (default: ~/.config/plaud-sync/config.json)")
+    tui_parser.add_argument("-p", "--period", type=str, default=None,
+                            help="Filter by period (e.g. 2026-03, thisweek, last7days)")
+    tui_parser.add_argument("--verbose", action="store_true",
+                            help="Enable verbose debug output")
+
     # validate command
     validate_parser = subparsers.add_parser("validate", help="Validate API token")
     validate_parser.add_argument("--token-file", type=str, default=None,
@@ -178,6 +193,42 @@ def _handle_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_tui(args: argparse.Namespace) -> int:
+    _setup_logging(args.verbose)
+
+    from plaud_sync.tui import TuiError, run_tui
+
+    try:
+        config = load_config(args.config)
+        if args.folder:
+            config.sync_folder = args.folder
+
+        token = load_token(args.token_file)
+        api = PlaudApiClient(token=token, api_domain=config.api_domain)
+
+        vault_path = Path(args.vault).resolve()
+        sync_folder = vault_path / config.sync_folder
+
+        period_range = _resolve_period(args)
+        if period_range is None and hasattr(args, "_period_error"):
+            return 1
+
+        files = api.list_files()
+
+        if period_range:
+            files = filter_by_period(files, period_range[0], period_range[1])
+
+        files = [f for f in files if not f.get("is_trash")]
+
+        run_tui(files, sync_folder=sync_folder, api=api)
+        return 0
+    except TuiError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except PlaudApiError as e:
+        return _handle_api_error(e)
+
+
 def _handle_api_error(e: PlaudApiError) -> int:
     if e.category == "auth":
         print(f"Authentication failed: {e}. Check your token.", file=sys.stderr)
@@ -205,6 +256,8 @@ def main() -> None:
         sys.exit(_handle_sync(args))
     elif args.command == "list":
         sys.exit(_handle_list(args))
+    elif args.command == "tui":
+        sys.exit(_handle_tui(args))
     elif args.command == "validate":
         sys.exit(_handle_validate(args))
     else:
