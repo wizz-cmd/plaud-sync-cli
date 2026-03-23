@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -116,3 +118,79 @@ def read_journal(journal_path: Path) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             logger.warning("Skipping invalid JSONL line: %s", line[:80])
     return entries
+
+
+def _slugify_filename(filename: str) -> str:
+    """Convert filename to wikilink-safe name (strip .md extension)."""
+    return filename.removesuffix(".md")
+
+
+def render_obsidian(entries: list[dict[str, Any]]) -> str:
+    """Render journal entries as an Obsidian-compatible Meeting-Journal.md.
+
+    Groups meetings by month, includes speaker index and wikilinks.
+
+    Args:
+        entries: List of journal entry dicts.
+
+    Returns:
+        Markdown string for the Obsidian meeting journal.
+    """
+    if not entries:
+        return "# Meeting Journal\n\nNo meetings recorded yet.\n"
+
+    # Sort by date descending
+    sorted_entries = sorted(entries, key=lambda e: e.get("date", ""), reverse=True)
+
+    # Group by month
+    by_month: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for e in sorted_entries:
+        date = e.get("date", "")
+        month = date[:7] if len(date) >= 7 else "Unknown"
+        by_month[month].append(e)
+
+    # Collect all speakers
+    speaker_counts: dict[str, int] = defaultdict(int)
+    for e in sorted_entries:
+        for s in e.get("speakers", []):
+            speaker_counts[s] += 1
+
+    lines = ["# Meeting Journal", ""]
+
+    # Speaker index
+    if speaker_counts:
+        lines.append("## Speakers")
+        lines.append("")
+        for speaker, count in sorted(speaker_counts.items(), key=lambda x: -x[1]):
+            lines.append(f"- **{speaker}** ({count} meetings)")
+        lines.append("")
+
+    # Meetings by month
+    for month in sorted(by_month.keys(), reverse=True):
+        month_entries = by_month[month]
+        lines.append(f"## {month}")
+        lines.append("")
+        lines.append("| Date | Title | Duration | Speakers |")
+        lines.append("|------|-------|----------|----------|")
+        for e in month_entries:
+            date = e.get("date", "?")
+            title = e.get("title", "Untitled")
+            filename = e.get("file", "")
+            if filename:
+                link = f"[[{_slugify_filename(filename)}|{title}]]"
+            else:
+                link = title
+            dur = f"{e.get('duration_min', 0)} min"
+            speakers = ", ".join(e.get("speakers", []))
+            lines.append(f"| {date} | {link} | {dur} | {speakers} |")
+        lines.append("")
+
+    # Summary stats
+    total = len(sorted_entries)
+    total_dur = sum(e.get("duration_min", 0) for e in sorted_entries)
+    total_words = sum(e.get("word_count", 0) for e in sorted_entries)
+    lines.append("---")
+    lines.append(f"*{total} meetings, {total_dur} min total, {total_words} words transcribed*")
+    lines.append("")
+
+    return "\n".join(lines)

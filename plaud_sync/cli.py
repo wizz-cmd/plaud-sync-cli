@@ -100,6 +100,8 @@ def _build_parser() -> argparse.ArgumentParser:
                                 help="Output format (default: pretty)")
     journal_parser.add_argument("--stats", action="store_true",
                                 help="Show speaker stats and meeting counts by month")
+    journal_parser.add_argument("--render-obsidian", type=str, default=None, metavar="PATH",
+                                help="Generate Obsidian Meeting-Journal.md at PATH")
     journal_parser.add_argument("--verbose", action="store_true",
                                 help="Enable verbose debug output")
 
@@ -339,7 +341,7 @@ def _handle_journal(args: argparse.Namespace) -> int:
 
     import json
     from collections import Counter
-    from plaud_sync.journal import read_journal, JOURNAL_FILENAME
+    from plaud_sync.journal import read_journal, render_obsidian, JOURNAL_FILENAME
 
     config = load_config(args.config)
     if args.folder:
@@ -371,6 +373,13 @@ def _handle_journal(args: argparse.Namespace) -> int:
             except ValueError:
                 continue
         entries = filtered
+
+    if args.render_obsidian:
+        obsidian_path = Path(args.render_obsidian)
+        md = render_obsidian(entries)
+        obsidian_path.write_text(md)
+        print(f"Written {len(entries)} entries to {obsidian_path}")
+        return 0
 
     if args.stats:
         return _print_journal_stats(entries)

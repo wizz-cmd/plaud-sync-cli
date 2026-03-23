@@ -9,6 +9,7 @@ from plaud_sync.journal import (
     build_journal_entry,
     append_or_update,
     read_journal,
+    render_obsidian,
     _word_count,
     _summary_preview,
     JOURNAL_FILENAME,
@@ -150,3 +151,55 @@ class TestReadJournal:
         journal.write_text('{"meeting_id": "m1"}\nnot json\n{"meeting_id": "m2"}\n')
         entries = read_journal(journal)
         assert len(entries) == 2
+
+
+class TestRenderObsidian:
+    def test_empty_entries(self):
+        md = render_obsidian([])
+        assert "No meetings recorded yet." in md
+
+    def test_groups_by_month(self):
+        entries = [
+            {"date": "2026-03-20", "title": "A", "file": "a.md",
+             "duration_min": 10, "speakers": ["Alice"], "word_count": 50},
+            {"date": "2026-03-21", "title": "B", "file": "b.md",
+             "duration_min": 15, "speakers": ["Bob"], "word_count": 80},
+            {"date": "2026-02-10", "title": "C", "file": "c.md",
+             "duration_min": 20, "speakers": ["Alice"], "word_count": 100},
+        ]
+        md = render_obsidian(entries)
+        assert "## 2026-03" in md
+        assert "## 2026-02" in md
+
+    def test_wikilinks(self):
+        entries = [
+            {"date": "2026-03-20", "title": "Test Meeting",
+             "file": "2026-03-20-test-meeting.md",
+             "duration_min": 10, "speakers": [], "word_count": 0},
+        ]
+        md = render_obsidian(entries)
+        assert "[[2026-03-20-test-meeting|Test Meeting]]" in md
+
+    def test_speaker_index(self):
+        entries = [
+            {"date": "2026-03-20", "title": "A", "file": "a.md",
+             "duration_min": 10, "speakers": ["Alice", "Bob"], "word_count": 0},
+            {"date": "2026-03-21", "title": "B", "file": "b.md",
+             "duration_min": 15, "speakers": ["Alice"], "word_count": 0},
+        ]
+        md = render_obsidian(entries)
+        assert "## Speakers" in md
+        assert "**Alice** (2 meetings)" in md
+        assert "**Bob** (1 meetings)" in md
+
+    def test_summary_stats(self):
+        entries = [
+            {"date": "2026-03-20", "title": "A", "file": "a.md",
+             "duration_min": 10, "speakers": [], "word_count": 50},
+            {"date": "2026-03-21", "title": "B", "file": "b.md",
+             "duration_min": 15, "speakers": [], "word_count": 80},
+        ]
+        md = render_obsidian(entries)
+        assert "2 meetings" in md
+        assert "25 min total" in md
+        assert "130 words" in md

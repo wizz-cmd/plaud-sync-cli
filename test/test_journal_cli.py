@@ -18,6 +18,7 @@ def _make_args(**kwargs):
         "period": None,
         "format": "pretty",
         "stats": False,
+        "render_obsidian": None,
         "verbose": False,
     }
     defaults.update(kwargs)
@@ -80,6 +81,23 @@ class TestHandleJournal:
         assert "2 meetings" in out
         assert "2026-03" in out
         assert "Alice" in out
+
+    def test_render_obsidian(self, tmp_path, capsys):
+        notes = tmp_path / "Plaud"
+        notes.mkdir()
+        _write_journal(notes / "meeting-journal.jsonl", [
+            {"meeting_id": "m1", "date": "2026-03-20", "title": "Test",
+             "file": "test.md", "duration_min": 10, "speakers": ["Alice"],
+             "word_count": 50},
+        ])
+        out_path = tmp_path / "Meeting-Journal.md"
+        args = _make_args(vault=str(tmp_path), render_obsidian=str(out_path))
+        result = _handle_journal(args)
+        assert result == 0
+        assert out_path.exists()
+        content = out_path.read_text()
+        assert "[[test|Test]]" in content
+        assert "Alice" in content
 
     def test_period_filter(self, tmp_path, capsys):
         notes = tmp_path / "Plaud"
