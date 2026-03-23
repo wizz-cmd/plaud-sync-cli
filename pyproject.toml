@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "plaud-sync-cli"
+version = "2.0.0"
+description = "Sync Plaud.ai recordings to local Markdown files"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+tui = ["textual>=0.40"]
+analyze = ["httpx>=0.25"]
+all = ["textual>=0.40", "httpx>=0.25"]
+
+[project.scripts]
+plaud-sync = "plaud_sync.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["plaud_sync*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
