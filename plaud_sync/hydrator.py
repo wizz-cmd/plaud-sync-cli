@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 from typing import Any
@@ -10,20 +11,31 @@ from urllib.error import URLError
 
 logger = logging.getLogger(__name__)
 
+_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
 
 def _fetch_url(url: str) -> str:
-    """Fetch text content from a URL. Returns empty string on failure."""
+    """Fetch text content from a URL. Handles gzip. Returns empty string on failure."""
     try:
-        req = Request(url)
+        req = Request(url, headers={"User-Agent": _USER_AGENT})
         with urlopen(req, timeout=30) as resp:
-            return resp.read().decode("utf-8")
+            raw = resp.read()
+        # Try gzip decompression (Plaud S3 URLs are .json.gz)
+        try:
+            return gzip.decompress(raw).decode("utf-8")
+        except (gzip.BadGzipFile, OSError):
+            return raw.decode("utf-8")
     except Exception as e:
-        logger.debug("Failed to fetch %s: %s", url, e)
+        logger.debug("Failed to fetch %s: %s", url[:80], e)
         return ""
 
 
 def _find_content_url(detail: dict, content_type: str) -> str | None:
-    """Find a signed URL for the given content type in content_list."""
+    """Find a signed URL for the given content type in content_list.
+
+    Plaud API uses 'data_type' and 'data_link' as field names.
+    Falls back to 'type' and 'url'/'signed_url' for compatibility.
+    """
     content_list = detail.get("content_list")
     if not isinstance(content_list, list):
         return None
@@ -31,12 +43,37 @@ def _find_content_url(detail: dict, content_type: str) -> str | None:
     for item in content_list:
         if not isinstance(item, dict):
             continue
-        item_type = item.get("type", "")
+        # Primary: data_type / data_link (current Plaud API)
+        item_type = item.get("data_type") or item.get("type", "")
         if item_type == content_type:
-            url = item.get("url") or item.get("signed_url") or item.get("download_url", "")
+            url = (item.get("data_link") or item.get("url")
+                   or item.get("signed_url") or item.get("download_url", ""))
             if url:
                 return url
     return None
+
+
+def _segments_to_text(segments: list[dict]) -> str:
+    """Convert transcript segments array to readable text.
+
+    Each segment has: content, speaker (optional), start_time, end_time.
+    Groups consecutive segments by speaker.
+    """
+    lines = []
+    current_speaker = None
+    for seg in segments:
+        content = seg.get("content", "").strip()
+        if not content:
+            continue
+        speaker = seg.get("speaker", "").strip()
+        if speaker and speaker != current_speaker:
+            lines.append(f"\n**{speaker}:** {content}")
+            current_speaker = speaker
+        elif speaker:
+            lines.append(content)
+        else:
+            lines.append(content)
+    return " ".join(lines).strip()
 
 
 def hydrate(detail: dict) -> dict:
@@ -61,7 +98,10 @@ def hydrate(detail: dict) -> dict:
             try:
                 parsed = json.loads(content)
                 if isinstance(parsed, dict):
-                    if "summary" in parsed:
+                    # Plaud uses 'ai_content' for the summary text
+                    if "ai_content" in parsed:
+                        result.setdefault("summary", parsed["ai_content"])
+                    elif "summary" in parsed:
                         result.setdefault("summary", parsed["summary"])
                     if "highlights" in parsed:
                         result.setdefault("highlights", parsed["highlights"])
@@ -79,7 +119,12 @@ def hydrate(detail: dict) -> dict:
         if content:
             try:
                 parsed = json.loads(content)
-                if isinstance(parsed, dict):
+                if isinstance(parsed, list):
+                    # Plaud returns transcript as array of segments
+                    # [{content, speaker, start_time, end_time}, ...]
+                    result.setdefault("full_text", _segments_to_text(parsed))
+                    result.setdefault("trans_result", parsed)
+                elif isinstance(parsed, dict):
                     if "full_text" in parsed:
                         result.setdefault("full_text", parsed["full_text"])
                     if "paragraphs" in parsed:

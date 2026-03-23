@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_API_DOMAIN = "https://api.plaud.ai"
 DEFAULT_SYNC_FOLDER = "Plaud"
-DEFAULT_FILENAME_PATTERN = "plaud-{date}-{title}"
+DEFAULT_FILENAME_PATTERN = "{date}-{title}"
 DEFAULT_CONFIG_PATH = "~/.config/plaud-sync/config.json"
 DEFAULT_TOKEN_PATH = "~/.secrets/plaud.txt"
 STATE_FILENAME = ".plaud-sync-state.json"
